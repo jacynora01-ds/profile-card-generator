@@ -10,7 +10,8 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const Profile = require("./models/Profile");
+// Import database model and Cloudinary configuration
+const Profile = require("./models/profile");
 const cloudinary = require("./config/cloudinary");
 
 // Middleware
@@ -50,7 +51,7 @@ const upload = multer({
     }
 });
 
-// HTML security
+// HTML security function
 function escapeHTML(text) {
     return String(text || "").replace(/[&<>"']/g, char => {
         const entities = {
@@ -72,7 +73,10 @@ function safeUrl(url) {
     try {
         const parsed = new URL(url);
 
-        if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        if (
+            parsed.protocol === "https:" ||
+            parsed.protocol === "http:"
+        ) {
             return escapeHTML(parsed.href);
         }
 
@@ -83,52 +87,63 @@ function safeUrl(url) {
 }
 
 // Create Profile
-app.post("/create-profile", upload.single("profileImage"), async (req, res) => {
-    try {
-        const {
-            name,
-            bio,
-            skills,
-            linkedin,
-            github,
-            instagram
-        } = req.body;
+app.post(
+    "/create-profile",
+    upload.single("profileImage"),
+    async (req, res) => {
 
-        if (!name || !bio || !skills) {
-            return res.status(400).send("Please fill in all required fields.");
+        try {
+            const {
+                name,
+                bio,
+                skills,
+                linkedin,
+                github,
+                instagram
+            } = req.body;
+
+            if (!name || !bio || !skills) {
+                return res.status(400).send(
+                    "Please fill in all required fields."
+                );
+            }
+
+            const skillList = skills
+                .split(",")
+                .map(skill => skill.trim())
+                .filter(skill => skill !== "");
+
+            const profile = new Profile({
+                name,
+                bio,
+                skills: skillList,
+
+                profileImage: req.file
+                    ? req.file.path
+                    : "",
+
+                linkedin,
+                github,
+                instagram
+            });
+
+            await profile.save();
+
+            res.redirect("/profile/" + profile._id);
+
+        } catch (error) {
+            console.error("Profile Creation Error:", error);
+
+            res.status(500).send(
+                "Error creating profile."
+            );
         }
-
-        const skillList = skills
-            .split(",")
-            .map(skill => skill.trim())
-            .filter(skill => skill !== "");
-
-        const profile = new Profile({
-            name,
-            bio,
-            skills: skillList,
-
-            profileImage: req.file
-                ? req.file.path
-                : "",
-
-            linkedin,
-            github,
-            instagram
-        });
-
-        await profile.save();
-
-        res.redirect("/profile/" + profile._id);
-
-    } catch (error) {
-        console.error("Profile Creation Error:", error);
-        res.status(500).send("Error creating profile.");
     }
-});
+);
 
 // Display Profile
 app.get("/profile/:id", async (req, res) => {
+
     try {
         if (!mongoose.isValidObjectId(req.params.id)) {
             return res.status(400).send("Invalid profile ID.");
@@ -145,8 +160,18 @@ app.get("/profile/:id", async (req, res) => {
         );
 
         const imageSection = profile.profileImage
-            ? `<img src="${escapeHTML(profile.profileImage)}" class="profile-image" alt="Profile Picture">`
-            : `<div class="avatar">${initial}</div>`;
+            ? `
+                <img
+                    src="${escapeHTML(profile.profileImage)}"
+                    class="profile-image"
+                    alt="Profile Picture"
+                >
+            `
+            : `
+                <div class="avatar">
+                    ${initial}
+                </div>
+            `;
 
         const skillsHTML = profile.skills
             .map(skill => `<span>${escapeHTML(skill)}</span>`)
@@ -160,18 +185,32 @@ app.get("/profile/:id", async (req, res) => {
 
         const socialHTML = socialLinks
             .filter(item => item[1])
-            .map(item =>
-                `<a href="${item[1]}" target="_blank" rel="noopener noreferrer">${item[0]}</a>`
-            )
+            .map(item => `
+                <a
+                    href="${item[1]}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                >
+                    ${item[0]}
+                </a>
+            `)
             .join("");
 
         res.send(`
             <!DOCTYPE html>
             <html lang="en">
+
             <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>${escapeHTML(profile.name)} | Profile Studio</title>
+
+                <meta
+                    name="viewport"
+                    content="width=device-width, initial-scale=1.0"
+                >
+
+                <title>
+                    ${escapeHTML(profile.name)} | Profile Studio
+                </title>
 
                 <style>
                     * {
@@ -200,7 +239,8 @@ app.get("/profile/:id", async (req, res) => {
                         border: 1px solid #55418b;
                     }
 
-                    .avatar, .profile-image {
+                    .avatar,
+                    .profile-image {
                         width: 110px;
                         height: 110px;
                         border-radius: 50%;
@@ -213,7 +253,11 @@ app.get("/profile/:id", async (req, res) => {
                         justify-content: center;
                         font-size: 40px;
                         font-weight: bold;
-                        background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+                        background: linear-gradient(
+                            135deg,
+                            #8b5cf6,
+                            #06b6d4
+                        );
                     }
 
                     .profile-image {
@@ -231,7 +275,8 @@ app.get("/profile/:id", async (req, res) => {
                         line-height: 1.7;
                     }
 
-                    .skills, .social {
+                    .skills,
+                    .social {
                         display: flex;
                         flex-wrap: wrap;
                         justify-content: center;
@@ -239,7 +284,8 @@ app.get("/profile/:id", async (req, res) => {
                         margin-top: 20px;
                     }
 
-                    .skills span, .social a {
+                    .skills span,
+                    .social a {
                         padding: 9px 13px;
                         border-radius: 20px;
                         font-size: 12px;
@@ -252,15 +298,22 @@ app.get("/profile/:id", async (req, res) => {
                         background: #49368a;
                     }
                 </style>
+
             </head>
 
             <body>
+
                 <div class="card">
+
                     ${imageSection}
 
-                    <h1>${escapeHTML(profile.name)}</h1>
+                    <h1>
+                        ${escapeHTML(profile.name)}
+                    </h1>
 
-                    <p>${escapeHTML(profile.bio)}</p>
+                    <p>
+                        ${escapeHTML(profile.bio)}
+                    </p>
 
                     <div class="skills">
                         ${skillsHTML}
@@ -269,32 +322,47 @@ app.get("/profile/:id", async (req, res) => {
                     <div class="social">
                         ${socialHTML}
                     </div>
+
                 </div>
+
             </body>
             </html>
         `);
 
     } catch (error) {
         console.error("Profile Display Error:", error);
-        res.status(500).send("Unable to display profile.");
+
+        res.status(500).send(
+            "Unable to display profile."
+        );
     }
 });
 
 // Upload error handler
 app.use((err, req, res, next) => {
     console.error("Upload Error:", err.message);
-    res.status(400).send("Image upload failed: " + escapeHTML(err.message));
+
+    res.status(400).send(
+        "Image upload failed: " + escapeHTML(err.message)
+    );
 });
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
+
         console.log("MongoDB Connected Successfully");
 
         app.listen(PORT, () => {
-            console.log(`Server running at http://localhost:${PORT}`);
+            console.log(
+                `Server running at http://localhost:${PORT}`
+            );
         });
+
     })
     .catch(error => {
-        console.error("MongoDB Connection Error:", error.message);
+        console.error(
+            "MongoDB Connection Error:",
+            error.message
+        );
     });
