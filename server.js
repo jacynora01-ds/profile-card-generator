@@ -3,44 +3,37 @@ const mongoose = require("mongoose");
 const dotenv = require("dotenv");
 const path = require("path");
 const multer = require("multer");
-const fs = require("fs");
-
-const Profile = require("./models/Profile");
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// Create uploads folder automatically
-const uploadPath = path.join(__dirname, "uploads");
-
-if (!fs.existsSync(uploadPath)) {
-    fs.mkdirSync(uploadPath);
-}
+const Profile = require("./models/Profile");
+const cloudinary = require("./config/cloudinary");
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(uploadPath));
 
-// Multer storage configuration
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, uploadPath);
-    },
+// Cloudinary image storage
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
 
-    filename: function (req, file, cb) {
-        const uniqueName =
-            Date.now() + "-" + Math.round(Math.random() * 1E9);
+    params: async (req, file) => ({
+        folder: "profile-card-generator",
 
-        cb(null, uniqueName + path.extname(file.originalname).toLowerCase());
-    }
+        public_id:
+            Date.now() + "-" + Math.round(Math.random() * 1E9),
+
+        allowed_formats: ["jpg", "jpeg", "png", "webp"]
+    })
 });
 
-// Image validation
+// Multer configuration
 const upload = multer({
     storage: storage,
 
@@ -48,7 +41,7 @@ const upload = multer({
         fileSize: 5 * 1024 * 1024
     },
 
-    fileFilter: function (req, file, cb) {
+    fileFilter: (req, file, cb) => {
         if (file.mimetype.startsWith("image/")) {
             cb(null, true);
         } else {
@@ -57,9 +50,9 @@ const upload = multer({
     }
 });
 
-// HTML security function
+// HTML security
 function escapeHTML(text) {
-    return String(text || "").replace(/[&<>"']/g, function (char) {
+    return String(text || "").replace(/[&<>"']/g, char => {
         const entities = {
             "&": "&amp;",
             "<": "&lt;",
@@ -91,7 +84,6 @@ function safeUrl(url) {
 
 // Create Profile
 app.post("/create-profile", upload.single("profileImage"), async (req, res) => {
-
     try {
         const {
             name,
@@ -117,7 +109,7 @@ app.post("/create-profile", upload.single("profileImage"), async (req, res) => {
             skills: skillList,
 
             profileImage: req.file
-                ? "/uploads/" + req.file.filename
+                ? req.file.path
                 : "",
 
             linkedin,
@@ -137,8 +129,11 @@ app.post("/create-profile", upload.single("profileImage"), async (req, res) => {
 
 // Display Profile
 app.get("/profile/:id", async (req, res) => {
-
     try {
+        if (!mongoose.isValidObjectId(req.params.id)) {
+            return res.status(400).send("Invalid profile ID.");
+        }
+
         const profile = await Profile.findById(req.params.id);
 
         if (!profile) {
@@ -176,7 +171,6 @@ app.get("/profile/:id", async (req, res) => {
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
                 <title>${escapeHTML(profile.name)} | Profile Studio</title>
 
                 <style>
@@ -262,7 +256,6 @@ app.get("/profile/:id", async (req, res) => {
 
             <body>
                 <div class="card">
-
                     ${imageSection}
 
                     <h1>${escapeHTML(profile.name)}</h1>
@@ -276,7 +269,6 @@ app.get("/profile/:id", async (req, res) => {
                     <div class="social">
                         ${socialHTML}
                     </div>
-
                 </div>
             </body>
             </html>
@@ -288,7 +280,13 @@ app.get("/profile/:id", async (req, res) => {
     }
 });
 
-// Database Connection
+// Upload error handler
+app.use((err, req, res, next) => {
+    console.error("Upload Error:", err.message);
+    res.status(400).send("Image upload failed: " + escapeHTML(err.message));
+});
+
+// MongoDB connection
 mongoose.connect(process.env.MONGO_URI)
     .then(() => {
         console.log("MongoDB Connected Successfully");
@@ -300,9 +298,3 @@ mongoose.connect(process.env.MONGO_URI)
     .catch(error => {
         console.error("MongoDB Connection Error:", error.message);
     });
-
-// Upload error handling
-app.use((err, req, res, next) => {
-    console.error("Upload Error:", err.message);
-    res.status(400).send("Image upload failed: " + escapeHTML(err.message));
-});
